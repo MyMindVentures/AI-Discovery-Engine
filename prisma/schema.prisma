@@ -1,0 +1,419 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String               @id @default(uuid())
+  email           String               @unique
+  name            String?
+  role            String               @default("user") // "user" | "platform_admin"
+  status          String               @default("active") // "active" | "suspended"
+  lastSeen        DateTime?
+  plan            String               @default("free") // "free" | "pro" | "enterprise"
+  memberships     OrganizationMember[]
+  apiKeys         ApiKey[]
+  savedLists      SavedList[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  deletedAt       DateTime?
+}
+
+model Organization {
+  id              String               @id @default(uuid())
+  name            String
+  plan            String               @default("free") // "free" | "starter" | "pro" | "team" | "enterprise"
+  members         OrganizationMember[]
+  companies       Company[]
+  searches        Search[]
+  scrapingJobs    ScrapingJob[]
+  monitoringJobs  MonitoringJob[]
+  exportJobs      ExportJob[]
+  usageEvents     UsageEvent[]
+  feedback        Feedback[]
+  savedLists      SavedList[]
+  subscription    Subscription?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  deletedAt       DateTime?
+}
+
+model OrganizationMember {
+  id              String       @id @default(uuid())
+  role            String       @default("member") // "owner" | "admin" | "member"
+  userId          String
+  user            User         @relation(fields: [userId], references: [id])
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model Subscription {
+  id                    String   @id @default(uuid())
+  stripeCustomerId      String?  @unique
+  stripeSubscriptionId  String?  @unique
+  stripePriceId         String?
+  status                String?  // active, trialing, canceled, etc.
+  currentPeriodEnd      DateTime?
+  cancelAtPeriodEnd     Boolean  @default(false)
+  organizationId        String   @unique
+  organization          Organization @relation(fields: [organizationId], references: [id])
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model Company {
+  id              String              @id @default(uuid())
+  name            String
+  domain          String?
+  website         String?
+  description     String?
+  industry        String?
+  location        String?
+  country         String?
+  city            String?
+  size            String?
+  revenue         String?
+  funding         String?
+  logo            String?
+  linkedin        String?
+  twitter         String?
+  status          String              @default("active") // "active" | "pending" | "archived"
+  score           Float               @default(0)
+  confidenceScore Float               @default(0)
+  sourceCount     Int                 @default(0)
+  metadata        Json?               @default("{}")
+  embedding       Json?               // Placeholder for pgvector-ready field
+  organizationId  String
+  organization    Organization        @relation(fields: [organizationId], references: [id])
+  contacts        Contact[]
+  tags            CompanyTag[]
+  technologies    CompanyTechnology[]
+  searchResults   SearchResult[]
+  sourceRecords   SourceRecord[]
+  savedInLists    SavedListCompany[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  deletedAt       DateTime?
+
+  @@unique([organizationId, domain])
+  @@index([organizationId])
+  @@index([domain])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Contact {
+  id              String    @id @default(uuid())
+  firstName       String?
+  lastName        String?
+  email           String?
+  linkedin        String?
+  title           String?
+  role            String?
+  companyId       String
+  company         Company   @relation(fields: [companyId], references: [id])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  @@index([companyId])
+}
+
+model Tag {
+  id        String       @id @default(uuid())
+  name      String       @unique
+  companies CompanyTag[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model CompanyTag {
+  id        String   @id @default(uuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  tagId     String
+  tag       Tag      @relation(fields: [tagId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, tagId])
+}
+
+model Technology {
+  id          String              @id @default(uuid())
+  name        String              @unique
+  category    String?
+  companies   CompanyTechnology[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+model CompanyTechnology {
+  id           String     @id @default(uuid())
+  companyId    String
+  company      Company    @relation(fields: [companyId], references: [id])
+  technologyId String
+  technology   Technology @relation(fields: [technologyId], references: [id])
+  version      String?
+  createdAt    DateTime   @default(now())
+
+  @@unique([companyId, technologyId])
+}
+
+model Search {
+  id              String         @id @default(uuid())
+  query           String
+  originalPrompt  String?
+  filters         Json?          @default("{}")
+  status          String         @default("pending") // "pending" | "running" | "completed" | "failed"
+  organizationId  String
+  organization    Organization   @relation(fields: [organizationId], references: [id])
+  results         SearchResult[]
+  scrapingJobs    ScrapingJob[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  deletedAt       DateTime?
+
+  @@index([organizationId])
+}
+
+model SearchResult {
+  id          String   @id @default(uuid())
+  searchId    String
+  search      Search   @relation(fields: [searchId], references: [id])
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id])
+  relevance   Float?
+  matchReason String?
+  createdAt   DateTime @default(now())
+}
+
+model SavedList {
+  id              String             @id @default(uuid())
+  name            String
+  description     String?
+  isShared        Boolean            @default(false)
+  organizationId  String
+  organization    Organization       @relation(fields: [organizationId], references: [id])
+  userId          String?
+  user            User?              @relation(fields: [userId], references: [id])
+  companies       SavedListCompany[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  deletedAt       DateTime?
+
+  @@index([organizationId])
+}
+
+model SavedListCompany {
+  id          String    @id @default(uuid())
+  listId      String
+  list        SavedList @relation(fields: [listId], references: [id])
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  createdAt   DateTime  @default(now())
+
+  @@unique([listId, companyId])
+}
+
+model ScrapingJob {
+  id              String       @id @default(uuid())
+  source          String       // "Apify" | "Firecrawl" | "PhantomBuster" | "Google Places" | "Playwright"
+  prompt          String
+  status          String       @default("running") // "running" | "completed" | "failed" | "paused" | "cancelled"
+  startedAt       DateTime     @default(now())
+  completedAt     DateTime?
+  progress        Int          @default(0)
+  recordsFound    Int          @default(0)
+  recordsCreated  Int          @default(0)
+  duplicates      Int          @default(0)
+  errorMessage    String?
+  searchId        String?
+  search          Search?      @relation(fields: [searchId], references: [id])
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+model MonitoringJob {
+  id              String       @id @default(uuid())
+  name            String
+  prompt          String?      // The discovery protocol prompt
+  targetType      String       @default("search") // "list" | "search"
+  targetId        String?
+  frequency       String       // "daily" | "weekly" | "monthly"
+  status          String       @default("active")
+  sources         Json?        @default("[]")
+  lastRun         DateTime?
+  nextRun         DateTime?
+  lastResultsCount Int         @default(0)
+  newFindingsCount Int         @default(0)
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  userId          String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
+
+  @@index([organizationId])
+}
+
+model ExportJob {
+  id              String       @id @default(uuid())
+  name            String
+  type            String       // "CSV" | "XLSX" | "JSON" | "Airtable" | "Sheets" | "Notion"
+  format          String       @default("CSV")
+  status          String       @default("pending") // "pending" | "running" | "completed" | "failed"
+  filePath        String?
+  fileUrl         String?
+  recordsCount    Int          @default(0)
+  errorMessage    String?
+  filters         Json?        @default("{}")
+  lastRun         DateTime?
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
+
+  @@index([organizationId])
+}
+
+model ApiKey {
+  id          String       @id @default(uuid())
+  name        String
+  keyHint     String       // Last 4 chars e.g. "****ABCD"
+  hashedKey   String       @unique
+  scopes      Json         @default("[\"read:companies\"]")
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  usageEvents UsageEvent[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+}
+
+model UsageEvent {
+  id              String       @id @default(uuid())
+  eventType       String       // "search" | "scraping" | "ai_token" | "export"
+  amount          Float
+  unit            String       // "count" | "tokens" | "usd"
+  metadata        Json?        @default("{}")
+  apiKeyId        String?
+  apiKey          ApiKey?      @relation(fields: [apiKeyId], references: [id])
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime     @default(now())
+}
+
+model SourceRecord {
+  id              String   @id @default(uuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
+  source          String   // e.g. "LinkedIn", "Crunchbase"
+  externalId      String?
+  rawPayload      Json?
+  url             String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([source])
+}
+
+model Feedback {
+  id                    String   @id @default(uuid())
+  organizationId        String
+  organization          Organization @relation(fields: [organizationId], references: [id])
+  userId                String?
+  
+  // User Fields
+  rawFeedback          String
+  screenshotUrl        String?
+  pageUrl              String?
+  
+  // AI Generated Fields
+  aiTitle              String?
+  aiSummary            String?
+  aiCategory           String?
+  aiPriority           String?
+  aiTags               Json?    @default("[]")
+  aiSuggestedAction    String?
+  aiFeatureArea        String?
+  aiSentiment          String?
+  aiComplexityEstimate String?
+  aiRoadmapFit         String?
+  aiReproductionHints  String?
+  aiUserIntent         String?
+  
+  // Admin Fields
+  status               String   @default("pending") // "pending" | "reviewed" | "planned" | "in_progress" | "shipped" | "archived"
+  adminNotes           String?
+  roadmapStatus        String?
+  assignedTo           String?
+  
+  // System Fields
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  deletedAt            DateTime?
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+model AiFunctionConfig {
+  id                   String        @id @default(uuid())
+  key                  String        @unique // e.g. "queryPlanner"
+  name                 String
+  description          String?
+  provider             String        @default("gemini") // "gemini" | "openai" | "anthropic"
+  model                String        @default("gemini-3-flash-preview")
+  temperature          Float         @default(0.7)
+  maxTokens            Int           @default(2048)
+  systemPrompt         String?
+  userPromptTemplate   String?
+  outputSchema         Json?         @default("{}")
+  confidenceThreshold  Float?        @default(0.8)
+  retryCount           Int           @default(3)
+  fallbackMode         String        @default("none") // "none" | "static" | "other_function"
+  enabled              Boolean       @default(true)
+  runs                 AiFunctionRun[]
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  @@index([key])
+}
+
+model AiFunctionRun {
+  id               String             @id @default(uuid())
+  functionKey      String             // The identifier for the function (e.g. "queryPlanner")
+  functionConfigId String?
+  functionConfig   AiFunctionConfig?  @relation(fields: [functionConfigId], references: [id])
+  input            Json?
+  output           Json?
+  status           String             // "success" | "failure" | "retrying"
+  error            String?
+  tokensUsed       Int                @default(0)
+  costEstimate     Float              @default(0)
+  latencyMs        Int                @default(0)
+  createdAt        DateTime           @default(now())
+
+  @@index([functionConfigId])
+  @@index([status])
+}
